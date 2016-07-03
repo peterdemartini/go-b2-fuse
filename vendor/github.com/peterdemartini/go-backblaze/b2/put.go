@@ -13,7 +13,7 @@ import (
 	"github.com/gosuri/uiprogress"
 	"github.com/gosuri/uiprogress/util/strutil"
 
-	"gopkg.in/kothar/go-backblaze.v0"
+	"gitub.com/peterdemartini/go-backblaze"
 )
 
 // TODO support directories

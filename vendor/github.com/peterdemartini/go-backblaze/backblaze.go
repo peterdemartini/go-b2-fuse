@@ -1,5 +1,5 @@
 // Package backblaze B2 API for Golang
-package backblaze // import "gopkg.in/kothar/go-backblaze.v0"
+package backblaze // import "gitub.com/peterdemartini/go-backblaze"
 
 import (
 	"bytes"
@@ -150,7 +150,7 @@ func (c *B2) DownloadURL() (string, error) {
 }
 
 // Create an authorized request using the client's credentials
-func (c *B2) authRequest(method, apiPath string, body io.Reader) (*http.Request, *authorizationState, error) {
+func (c *B2) authRequest(method, apiPath string, body io.Reader, urlType string) (*http.Request, *authorizationState, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -164,6 +164,9 @@ func (c *B2) authRequest(method, apiPath string, body io.Reader) (*http.Request,
 	}
 
 	path := c.auth.APIEndpoint + v1 + apiPath
+	if urlType == "download" {
+		path = c.auth.DownloadURL + v1 + apiPath
+	}
 
 	req, err := http.NewRequest(method, path, body)
 	if err != nil {
@@ -180,8 +183,8 @@ func (c *B2) authRequest(method, apiPath string, body io.Reader) (*http.Request,
 }
 
 // Dispatch an authorized API GET request
-func (c *B2) authGet(apiPath string) (*http.Response, *authorizationState, error) {
-	req, auth, err := c.authRequest("GET", apiPath, nil)
+func (c *B2) authGet(apiPath, urlType string) (*http.Response, *authorizationState, error) {
+	req, auth, err := c.authRequest("GET", apiPath, nil, urlType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -191,8 +194,8 @@ func (c *B2) authGet(apiPath string) (*http.Response, *authorizationState, error
 }
 
 // Dispatch an authorized POST request
-func (c *B2) authPost(apiPath string, body io.Reader) (*http.Response, *authorizationState, error) {
-	req, auth, err := c.authRequest("POST", apiPath, body)
+func (c *B2) authPost(apiPath string, body io.Reader, urlType string) (*http.Response, *authorizationState, error) {
+	req, auth, err := c.authRequest("POST", apiPath, body, urlType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +253,7 @@ func (c *B2) parseResponse(resp *http.Response, result interface{}, auth *author
 }
 
 // Perform a B2 API request with the provided request and response objects
-func (c *B2) apiRequest(apiPath string, request interface{}, response interface{}) error {
+func (c *B2) apiRequest(apiPath string, request interface{}, response interface{}, urlType string) error {
 	body, err := ffjson.Marshal(request)
 	if err != nil {
 		return err
@@ -262,7 +265,7 @@ func (c *B2) apiRequest(apiPath string, request interface{}, response interface{
 		log.Printf("apiRequest: %s %s", apiPath, body)
 	}
 
-	err = c.tryAPIRequest(apiPath, body, response)
+	err = c.tryAPIRequest(apiPath, body, response, urlType)
 
 	// Retry after non-fatal errors
 	if b2err, ok := err.(*B2Error); ok {
@@ -271,14 +274,14 @@ func (c *B2) apiRequest(apiPath string, request interface{}, response interface{
 				log.Printf("Retrying request %q due to error: %v", apiPath, err)
 			}
 
-			return c.tryAPIRequest(apiPath, body, response)
+			return c.tryAPIRequest(apiPath, body, response, urlType)
 		}
 	}
 	return err
 }
 
-func (c *B2) tryAPIRequest(apiPath string, body []byte, response interface{}) error {
-	resp, auth, err := c.authPost(apiPath, bytes.NewReader(body))
+func (c *B2) tryAPIRequest(apiPath string, body []byte, response interface{}, urlType string) error {
+	resp, auth, err := c.authPost(apiPath, bytes.NewReader(body), urlType)
 	if err != nil {
 		if c.Debug {
 			log.Println("B2.post returned an error: ", err)

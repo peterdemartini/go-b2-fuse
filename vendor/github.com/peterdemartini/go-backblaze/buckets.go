@@ -60,7 +60,7 @@ func (b *B2) CreateBucket(bucketName string, bucketType BucketType) (*Bucket, er
 	}
 	response := &BucketInfo{}
 
-	if err := b.apiRequest("b2_create_bucket", request, response); err != nil {
+	if err := b.apiRequest("b2_create_bucket", request, response, "api"); err != nil {
 		return nil, err
 	}
 
@@ -79,7 +79,7 @@ func (b *B2) deleteBucket(bucketID string) (*Bucket, error) {
 	}
 	response := &BucketInfo{}
 
-	if err := b.apiRequest("b2_delete_bucket", request, response); err != nil {
+	if err := b.apiRequest("b2_delete_bucket", request, response, "api"); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +104,7 @@ func (b *B2) ListBuckets() ([]*Bucket, error) {
 	}
 	response := &listBucketsResponse{}
 
-	if err := b.apiRequest("b2_list_buckets", request, response); err != nil {
+	if err := b.apiRequest("b2_list_buckets", request, response, "api"); err != nil {
 		return nil, err
 	}
 
@@ -138,7 +138,7 @@ func (b *B2) updateBucket(bucketID string, bucketType BucketType) (*Bucket, erro
 	}
 	response := &BucketInfo{}
 
-	if err := b.apiRequest("b2_update_bucket", request, response); err != nil {
+	if err := b.apiRequest("b2_update_bucket", request, response, "api"); err != nil {
 		return nil, err
 	}
 
@@ -192,7 +192,7 @@ func (b *Bucket) internalGetUploadURL() (*url.URL, *bucketAuthorizationState, er
 	}
 
 	response := &getUploadURLResponse{}
-	if err := b.b2.apiRequest("b2_get_upload_url", request, response); err != nil {
+	if err := b.b2.apiRequest("b2_get_upload_url", request, response, "api"); err != nil {
 		return nil, nil, err
 	}
 

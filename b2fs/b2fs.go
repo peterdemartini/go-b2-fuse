@@ -2,18 +2,19 @@ package b2fs
 
 import (
 	"fmt"
+	"io/ioutil"
 	"strings"
+	"sync"
+	"time"
 
 	"path/filepath"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/hanwen/go-fuse/fuse/pathfs"
+	"github.com/peterdemartini/go-backblaze"
 	De "github.com/tj/go-debug"
-	backblaze "gopkg.in/kothar/go-backblaze.v0"
 )
-
-var debug = De.Debug("go-b2-fuse:b2fs")
 
 // Config defines the configuration
 type Config struct {
@@ -25,36 +26,53 @@ type Config struct {
 
 // DirItem is a list item
 type DirItem struct {
-	item  fuse.DirEntry
-	isDir bool
-	name  string
-	file  backblaze.FileStatus
+	mode     uint32
+	isDir    bool
+	dir      string
+	fullPath string
+	fileName string
+	file     backblaze.FileStatus
 }
 
 // B2FS defines the struct
 type B2FS struct {
 	pathfs.FileSystem
-	config   *Config
-	b2       *backblaze.B2
-	bucket   *backblaze.Bucket
-	files    []backblaze.FileStatus
-	dirItems []DirItem
+	config         *Config
+	b2             *backblaze.B2
+	bucket         *backblaze.Bucket
+	dirItems       []DirItem
+	fetchingFiles  bool
+	fetchingError  error
+	filesUpdatedAt int
 }
 
 // GetAttr gets file attributes
 func (client *B2FS) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fuse.Status) {
-	debug("get attr %s", name)
+	var debug = De.Debug("go-b2-fuse:GetAttr")
+	name = escapeName(name)
+	debug("name: %s", name)
+	err := client.getFiles(filepath.Dir(name))
+	if err != nil {
+		fmt.Printf("Error listing file names %v", err)
+		return nil, fuse.ENOENT
+	}
 	if name == "" {
 		return &fuse.Attr{
 			Mode: fuse.S_IFDIR | 0755,
 		}, fuse.OK
 	}
 	for _, dirItem := range client.dirItems {
-		debug("found file %s == %s", dirItem.name, name)
-		if dirItem.name == name {
-			debug("matched file %s", dirItem.name)
+		if dirItem.fullPath == name {
+			var mode uint32
+			if dirItem.isDir {
+				mode = dirItem.mode | 0755
+				debug("matched dir %s", dirItem.fullPath)
+			} else {
+				mode = dirItem.mode | 0644
+				debug("matched file %s", dirItem.fullPath)
+			}
 			return &fuse.Attr{
-				Mode: dirItem.item.Mode,
+				Mode: mode,
 				Size: uint64(dirItem.file.Size),
 			}, fuse.OK
 		}
@@ -64,88 +82,139 @@ func (client *B2FS) GetAttr(name string, context *fuse.Context) (*fuse.Attr, fus
 
 // OpenDir will open directory
 func (client *B2FS) OpenDir(name string, context *fuse.Context) (c []fuse.DirEntry, code fuse.Status) {
-	debug("open dir %s", name)
+	var debug = De.Debug("go-b2-fuse:OpenDir")
+	name = escapeName(name)
+	debug("name: %s", name)
 	list := []fuse.DirEntry{}
-	err := client.getFiles()
+	err := client.getFiles(name)
 	if err != nil {
 		fmt.Printf("Error listing file names %v", err)
 		return nil, fuse.ENOENT
 	}
 
 	for _, dirItem := range client.dirItems {
-		dir, _ := filepath.Split(dirItem.name)
-		debug("comparing item %s == %s", name, dir)
-		if name == dir {
-			debug("found item %s == %s", name, dirItem.item.Name)
-			list = append(list, dirItem.item)
+		// debug("comparing %s == %s", name, dirItem.dir)
+		if name == dirItem.dir {
+			debug("found file: %s", dirItem.fullPath)
+			list = append(list, fuse.DirEntry{
+				Name: dirItem.fileName,
+				Mode: dirItem.mode,
+			})
 		}
 	}
-
-	debug("got files")
 	return list, fuse.OK
 }
 
 // Open will open a file
 func (client *B2FS) Open(name string, flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
-	debug("opening %s", name)
-	if name != "file.txt" {
+	var debug = De.Debug("go-b2-fuse:Open")
+	name = escapeName(name)
+	err := client.getFiles(filepath.Dir(name))
+	if err != nil {
+		fmt.Printf("Error listing file names %v", err)
 		return nil, fuse.ENOENT
 	}
-	if flags&fuse.O_ANYWRITE != 0 {
-		return nil, fuse.EPERM
+	debug("name: %s", name)
+	for _, item := range client.dirItems {
+		if item.fullPath == name {
+			debug("matched file %s", item.fullPath)
+			_, r, err := client.b2.DownloadFileByID(item.file.ID)
+			if err != nil {
+				fmt.Printf("Error downloading file %v", err.Error())
+				return nil, fuse.ENODATA
+			}
+			defer r.Close()
+			bytes, err := ioutil.ReadAll(r)
+			if err != nil {
+				fmt.Printf("Error reading file %v", err.Error())
+				return nil, fuse.ENODATA
+			}
+			return nodefs.NewDataFile(bytes), fuse.OK
+		}
 	}
-	return nodefs.NewDataFile([]byte(name)), fuse.OK
+	return nil, fuse.ENOENT
 }
 
-func (client *B2FS) getFiles() error {
-	files, err := client.bucket.ListFileNames("", 0)
-	if err != nil {
-		return err
+func (client *B2FS) getFiles(dir string) error {
+	var debug = De.Debug("go-b2-fuse:getFiles")
+	if client.fetchingFiles {
+		fmt.Println("waiting for files")
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			for {
+				if !client.fetchingFiles {
+					wg.Done()
+					return
+				}
+				time.Sleep(time.Millisecond * 5)
+			}
+		}()
+		wg.Wait()
+		debug("done waiting")
+		return client.fetchingError
 	}
 
-	client.files = files.Files
+	updated := client.filesUpdatedAt
+	if updated > 0 {
+		since := getNowMS() - 500
+		if (updated - since) > 0 {
+			return nil
+		}
+	}
+	client.fetchingError = nil
+	client.fetchingFiles = true
+	files, err := client.bucket.ListFileNames(dir, 0)
+	if err != nil {
+		fmt.Printf("error getting files %v", err.Error())
+		client.fetchingError = err
+		return err
+	}
 	client.dirItems = []DirItem{}
-
-	for _, file := range client.files {
+	for _, file := range files.Files {
 		paths, fullFile := getPaths(file.Name)
-		debug("got file %s : %s : %v", file.Name, fullFile, paths)
 		client.addDirItem(file, fullFile, false)
 		for _, path := range paths {
 			client.addDirItem(file, path, true)
 		}
 	}
+	client.fetchingFiles = false
+	client.fetchingError = nil
+	client.filesUpdatedAt = getNowMS()
+	debug("got files %v", len(files.Files))
 	return nil
 }
 
-func (client *B2FS) addDirItem(file backblaze.FileStatus, name string, isDir bool) {
-	if client.dirItemExists(name) {
-		debug("dir item exists %s", name)
+func (client *B2FS) addDirItem(file backblaze.FileStatus, fullPath string, isDir bool) {
+	var debug = De.Debug("go-b2-fuse:addDirItem")
+	if client.dirItemExists(fullPath) {
 		return
 	}
-	_, fileName := filepath.Split(name)
+	dir, fileName := filepath.Split(fullPath)
 	var mode uint32
 	if isDir {
 		mode = fuse.S_IFDIR
 	} else {
 		mode = fuse.S_IFREG
 	}
-	item := fuse.DirEntry{
-		Name: fileName,
-		Mode: mode,
-	}
+	dir = escapePath(dir)
+	fullPath = escapePath(fullPath)
+	fileName = escapePath(fileName)
 	dirItem := DirItem{
-		item:  item,
-		name:  name,
-		isDir: isDir,
-		file:  file,
+		mode:     mode,
+		isDir:    isDir,
+		file:     file,
+		fullPath: fullPath,
+		fileName: fileName,
+		dir:      dir,
 	}
+	debug("adding dirItem fileName: %s dir: %s fullPath: %s", fileName, dir, fullPath)
 	client.dirItems = append(client.dirItems, dirItem)
-	debug("added dir item %s", name)
 }
 
 func (client *B2FS) dirItemExists(name string) bool {
 	for _, item := range client.dirItems {
-		if item.name == name {
+		if item.fullPath == name {
 			return true
 		}
 	}
@@ -154,36 +223,45 @@ func (client *B2FS) dirItemExists(name string) bool {
 
 // Serve the B2FS
 func Serve(config *Config) error {
+	var debug = De.Debug("go-b2-fuse:serve")
 	b2, err := backblaze.NewB2(backblaze.Credentials{
 		AccountID:      config.AccountID,
 		ApplicationKey: config.ApplicationKey,
 	})
+	// b2.Debug = true
 	if err != nil {
-		debug("error during api fail %v", err.Error())
+		fmt.Printf("error while accessing b2 %v", err.Error())
 		return fmt.Errorf("B2 API Fail: %v\n", err.Error())
+	}
+	err = b2.AuthorizeAccount()
+	if err != nil {
+		fmt.Printf("error while authorizing b2 %v", err.Error())
+		return fmt.Errorf("B2 Auth Fail: %v\n", err.Error())
 	}
 	debug("connected to B2")
 	bucket, err := getBucket(b2, config.BucketID)
 	if err != nil {
-		debug("error during getting bucket %v", err.Error())
+		fmt.Printf("error while getting b2 bucket %v", err.Error())
 		return fmt.Errorf("B2 Unable to Get Bucket: %v\n", err.Error())
 	}
 	debug("got bucket %s", bucket.Name)
 	b2fs := &B2FS{
-		FileSystem: pathfs.NewDefaultFileSystem(),
-		config:     config,
-		b2:         b2,
-		bucket:     bucket,
+		FileSystem:     pathfs.NewDefaultFileSystem(),
+		config:         config,
+		b2:             b2,
+		bucket:         bucket,
+		fetchingFiles:  false,
+		fetchingError:  nil,
+		filesUpdatedAt: 0,
 	}
 	nfs := pathfs.NewPathNodeFs(b2fs, nil)
 	server, _, err := nodefs.MountRoot(config.MountPoint, nfs.Root(), nil)
 	if err != nil {
-		debug("error during mounting %v", err.Error())
+		fmt.Printf("error during mounting %v", err.Error())
 		return fmt.Errorf("Mount fail: %v\n", err.Error())
 	}
 	debug("serving %v", config.MountPoint)
 	server.Serve()
-	debug("after serving")
 	return nil
 }
 
@@ -213,4 +291,18 @@ func getPaths(path string) ([]string, string) {
 		list = append(list, lastDir)
 	}
 	return list, file
+}
+
+func escapeName(name string) string {
+	name = strings.Replace(name, "._.", "", 1)
+	name = strings.Replace(name, "._", "", 1)
+	return name
+}
+
+func escapePath(path string) string {
+	return strings.Trim(path, string(filepath.Separator))
+}
+
+func getNowMS() int {
+	return time.Now().Nanosecond() / 1000000
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 
-	"gopkg.in/kothar/go-backblaze.v0"
+	"gitub.com/peterdemartini/go-backblaze"
 )
 
 // Options defines command line flags used by this application
