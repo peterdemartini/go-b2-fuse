@@ -24,3 +24,4 @@ _testmain.go
 *.prof
 go-b2-fuse
 entrypoint/go-b2-fuse
+test-it.sh

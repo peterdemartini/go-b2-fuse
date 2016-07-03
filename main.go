@@ -44,9 +44,14 @@ func main() {
 	app.Run(os.Args)
 }
 
-func run(context *cli.Context) {
+func run(context *cli.Context) error {
 	b2Config := getOpts(context)
-	b2fs.Serve(b2Config)
+	err := b2fs.Serve(b2Config)
+	if err != nil {
+		log.Fatalln(err)
+		return err
+	}
+	return nil
 }
 
 func getOpts(context *cli.Context) *b2fs.Config {

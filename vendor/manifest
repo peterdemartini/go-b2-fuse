@@ -27,10 +27,34 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/dustin/go-humanize",
+			"repository": "https://github.com/dustin/go-humanize",
+			"vcs": "git",
+			"revision": "fef948f2d241bd1fd0631108ecc2c9553bae60bf",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/fatih/color",
 			"repository": "https://github.com/fatih/color",
 			"vcs": "git",
 			"revision": "87d4004f2ab62d0d255e0a38f1680aa534549fe3",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/gosuri/uilive",
+			"repository": "https://github.com/gosuri/uilive",
+			"vcs": "git",
+			"revision": "efb88ccd059957c48f24f9d351d33a0eb00ede41",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/gosuri/uiprogress",
+			"repository": "https://github.com/gosuri/uiprogress",
+			"vcs": "git",
+			"revision": "a9f819bfc744fe70043abcc5a6cd0137a678e3d8",
 			"branch": "master",
 			"notests": true
 		},
@@ -41,6 +65,14 @@
 			"revision": "7b281480b21a59f54a0c86451e7de13cd9be736f",
 			"branch": "master",
 			"path": "/fuse",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/jessevdk/go-flags",
+			"repository": "https://github.com/jessevdk/go-flags",
+			"vcs": "git",
+			"revision": "f2785f5820ec967043de79c8be97edfc464ca745",
+			"branch": "master",
 			"notests": true
 		},
 		{
@@ -60,6 +92,24 @@
 			"notests": true
 		},
 		{
+			"importpath": "github.com/pquerna/ffjson/ffjson",
+			"repository": "https://github.com/pquerna/ffjson",
+			"vcs": "git",
+			"revision": "a16f62ecdaf7d13077d64d3cdb1cc43486119809",
+			"branch": "master",
+			"path": "/ffjson",
+			"notests": true
+		},
+		{
+			"importpath": "github.com/pquerna/ffjson/fflib/v1",
+			"repository": "https://github.com/pquerna/ffjson",
+			"vcs": "git",
+			"revision": "a16f62ecdaf7d13077d64d3cdb1cc43486119809",
+			"branch": "master",
+			"path": "/fflib/v1",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/tj/go-debug",
 			"repository": "https://github.com/tj/go-debug",
 			"vcs": "git",
@@ -72,6 +122,14 @@
 			"repository": "https://github.com/visionmedia/go-debug",
 			"vcs": "git",
 			"revision": "ff4a55a20a86994118644bbddc6a216da193cc13",
+			"branch": "master",
+			"notests": true
+		},
+		{
+			"importpath": "gopkg.in/kothar/go-backblaze.v0",
+			"repository": "https://gopkg.in/kothar/go-backblaze.v0",
+			"vcs": "git",
+			"revision": "1965d4d011b96421ace094c562df6eeaa44e8c70",
 			"branch": "master",
 			"notests": true
 		},
