@@ -22,3 +22,5 @@ _testmain.go
 *.exe
 *.test
 *.prof
+go-b2-fuse
+entrypoint/go-b2-fuse

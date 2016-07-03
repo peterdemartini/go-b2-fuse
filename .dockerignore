@@ -1,0 +1,6 @@
+.git
+go-b2-fuse
+entrypoint/go-b2-fuse
+build.sh
+cross-compile.sh
+README.md
